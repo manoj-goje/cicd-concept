@@ -1,0 +1,507 @@
+Below is a complete **GitHub README.md format** for your Java Web Application CI/CD project. You can copy it directly into a file named `README.md` in your GitHub repository.
+
+# Java Web Application Deployment Using Azure DevOps CI/CD, Docker & AKS
+
+## 1. Project Overview
+
+This project demonstrates how to automate the build, containerization, and deployment of a Java Spring Boot web application using Azure DevOps CI/CD.
+
+The application source code is stored in GitHub. Azure DevOps automatically builds the Java application, creates a Docker image, pushes it to Azure Container Registry (ACR), and deploys it to Azure Kubernetes Service (AKS).
+
+### Technologies Used
+
+- Java 17
+- Spring Boot
+- Maven
+- Git & GitHub
+- Azure DevOps
+- Docker
+- Azure Container Registry (ACR)
+- Azure Kubernetes Service (AKS)
+- Kubernetes YAML
+
+---
+
+## 2. CI/CD Pipeline Architecture
+
+```
+                 DEVELOPER
+                     |
+               Push Code Changes
+                     |
+                     v
+              GITHUB REPOSITORY
+          (Java Code + Dockerfile)
+                     |
+                     v
+             AZURE DEVOPS PIPELINE
+                     |
+             Pipeline Triggered
+                     |
+                     v
+          +-----------------------+
+          |     CI PIPELINE       |
+          |                       |
+          | 1. Download Code      |
+          | 2. Maven Build        |
+          | 3. Generate JAR       |
+          | 4. Docker Build       |
+          +-----------------------+
+                     |
+                     v
+                DOCKER IMAGE
+                 java-app:v1
+                     |
+                     v
+          AZURE CONTAINER REGISTRY
+                   (ACR)
+              Stores Docker Image
+                     |
+                     v
+          +-----------------------+
+          |     CD PIPELINE       |
+          |                       |
+          | 1. Connect to AKS     |
+          | 2. Update Deployment  |
+          | 3. Deploy New Image   |
+          +-----------------------+
+                     |
+                     v
+          AZURE KUBERNETES SERVICE
+                   (AKS)
+                     |
+                     v
+               KUBERNETES PODS
+                     |
+                     v
+              RUNNING WEB APP
+```
+
+---
+
+## 3. Project Folder Structure
+
+```
+java-web-app/
+│
+├── src/
+│   └── main/
+│       └── java/
+│           └── com/example/demo/
+│               └── DemoApplication.java
+│
+├── pom.xml
+├── Dockerfile
+├── azure-pipelines.yml
+│
+└── k8s/
+    └── deployment.yml
+```
+
+---
+
+## 4. Step 1: Create Java Application
+
+**File: DemoApplication.java**
+
+```
+package com.example.demo;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@SpringBootApplication
+@RestController
+public class DemoApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(DemoApplication.class, args);
+    }
+
+    @GetMapping("/")
+    public String home() {
+        return "Welcome to Azure DevOps CI/CD!";
+    }
+}
+```
+
+**Explanation:** Creates a simple Spring Boot web application that displays a welcome message.
+
+---
+
+## 5. Step 2: Configure Maven
+
+**File: pom.xml**
+
+```
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example</groupId>
+    <artifactId>java-web-app</artifactId>
+    <version>1.0.0</version>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.0</version>
+        <relativePath/>
+    </parent>
+
+    <properties>
+        <java.version>17</java.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
+```
+
+**Explanation:** Maven manages project dependencies and compiles Java code into an executable JAR file.
+
+---
+
+## 6. Step 3: Create Dockerfile
+
+**File: Dockerfile**
+
+```
+FROM eclipse-temurin:17-jre
+
+WORKDIR /app
+
+COPY target/*.jar app.jar
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
+
+**Explanation:**
+
+| Instruction | Purpose                                       |
+| ----------- | --------------------------------------------- |
+| FROM        | Uses Java 17 runtime image.                   |
+| WORKDIR     | Sets the working directory.                   |
+| COPY        | Copies the generated JAR file into the image. |
+| EXPOSE      | Documents application port 8080.              |
+| ENTRYPOINT  | Starts the Java application.                  |
+
+**Important:** The Dockerfile uses the JAR generated by Maven during the CI pipeline.
+
+---
+
+## 7. Step 4: Create Azure DevOps Pipeline
+
+**File: azure-pipelines.yml**
+
+```
+trigger:
+  - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  imageName: java-web-app
+  acrName: myregistry.azurecr.io
+
+stages:
+
+# ================= CI STAGE =================
+
+- stage: Build
+  displayName: Build Java Application
+
+  jobs:
+  - job: BuildJob
+
+    steps:
+
+    # Build Java Application
+    - task: Maven@4
+      displayName: Build Java JAR
+      inputs:
+        mavenPomFile: pom.xml
+        goals: clean package
+        javaHomeOption: JDKVersion
+        jdkVersionOption: '1.17'
+
+    # Build and Push Docker Image
+    - task: Docker@2
+      displayName: Build and Push Docker Image
+      inputs:
+        command: buildAndPush
+        repository: $(imageName)
+        dockerfile: Dockerfile
+        containerRegistry: my-acr-connection
+        tags: |
+          $(Build.BuildId)
+
+# ================= CD STAGE =================
+
+- stage: Deploy
+  displayName: Deploy to AKS
+
+  dependsOn: Build
+
+  jobs:
+  - job: DeployJob
+
+    steps:
+
+    # Deploy Application to Kubernetes
+    - task: KubernetesManifest@1
+      displayName: Deploy Java Application
+      inputs:
+        action: deploy
+        kubernetesServiceConnection: my-aks-connection
+        namespace: default
+        manifests: |
+          k8s/deployment.yml
+        containers: |
+          $(acrName)/$(imageName):$(Build.BuildId)
+```
+
+**Explanation:**
+
+| Pipeline instruction  | Purpose                                             |
+| --------------------- | --------------------------------------------------- |
+| trigger               | Starts pipeline when code is pushed to main.        |
+| pool                  | Selects the Ubuntu build agent.                     |
+| Maven\@4              | Builds Java application and generates JAR.          |
+| Docker\@2             | Builds and pushes Docker image.                     |
+| Build.BuildId         | Provides a unique image tag for the pipeline run.   |
+| KubernetesManifest\@1 | Applies Kubernetes manifests and updates the image. |
+| dependsOn             | Runs deployment only after successful build stage.  |
+
+---
+
+## 8. Step 5: Create Kubernetes Deployment
+
+**File: k8s/deployment.yml**
+
+```
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: java-web-app
+
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: java-web-app
+
+  template:
+    metadata:
+      labels:
+        app: java-web-app
+
+    spec:
+      containers:
+      - name: java-web-app
+        image: myregistry.azurecr.io/java-web-app:latest
+
+        ports:
+        - containerPort: 8080
+
+---
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: java-web-app-service
+
+spec:
+  type: LoadBalancer
+
+  selector:
+    app: java-web-app
+
+  ports:
+  - port: 80
+    targetPort: 8080
+```
+
+**Explanation:**
+
+- Deployment creates and manages two application pods.
+- Container image specifies the Docker image to run.
+- Service exposes the application using an external Azure Load Balancer.
+- Port 80 receives external traffic and forwards it to application port 8080.
+
+The pipeline replaces the image reference with the current build-specific image tag during deployment.
+
+---
+
+## 9. Step 6: How CI/CD Works When Code Changes
+
+Suppose the original Java application contains:
+
+```
+return "Welcome Manoj";
+```
+
+You modify it to:
+
+```
+return "Welcome to Azure Cloud!";
+```
+
+Push changes to GitHub:
+
+```
+git add .
+git commit -m "Updated Java application"
+git push origin main
+```
+
+### What happens automatically?
+
+1. GitHub receives updated Java code.
+2. Azure DevOps pipeline is triggered.
+3. Pipeline agent downloads the latest code.
+4. Maven compiles the code and generates a new JAR.
+5. Docker uses the existing Dockerfile to create a new image.
+6. Docker image is pushed to ACR.
+7. Deployment stage connects to AKS.
+8. Kubernetes Deployment is updated with the new image.
+9. Kubernetes gradually replaces old pods with new pods when rolling updates are configured.
+10. Updated application becomes available.
+
+**Remember:** The Dockerfile usually remains unchanged. Docker creates a new image using the updated application code and the existing Dockerfile.
+
+---
+
+## 10. Important Docker Commands
+
+### Build Docker Image
+
+```
+docker build -t java-web-app:v1 .
+```
+
+### Login to Azure Container Registry
+
+```
+az acr login --name myregistry
+```
+
+### Tag Docker Image
+
+```
+docker tag java-web-app:v1 myregistry.azurecr.io/java-web-app:v1
+```
+
+### Push Docker Image
+
+```
+docker push myregistry.azurecr.io/java-web-app:v1
+```
+
+### Check Kubernetes Pods
+
+```
+kubectl get pods
+```
+
+### Check Kubernetes Deployment
+
+```
+kubectl get deployments
+```
+
+### Check Application Service
+
+```
+kubectl get services
+```
+
+---
+
+## 11. Required Azure DevOps Configurations
+
+Before running the pipeline, configure:
+
+| Configuration          | Purpose                                    |
+| ---------------------- | ------------------------------------------ |
+| GitHub connection      | Connect GitHub repository to Azure DevOps. |
+| ACR Service Connection | Authenticate Docker tasks with ACR.        |
+| AKS Service Connection | Allow pipeline to communicate with AKS.    |
+| ACR Pull Permission    | Allow AKS to download Docker images.       |
+| Pipeline YAML          | Configure automated CI/CD stages.          |
+
+Replace the following placeholders with your actual resource details:
+
+- `myregistry.azurecr.io` – Your ACR login server.
+- `my-acr-connection` – Your Azure Container Registry service connection.
+- `my-aks-connection` – Your AKS service connection.
+
+---
+
+## 12. Important Concepts for Interviews
+
+| Question              | Short Answer                                                        |
+| --------------------- | ------------------------------------------------------------------- |
+| What is CI?           | Automatically builds and tests application code.                    |
+| What is CD?           | Automates application deployment.                                   |
+| What is Maven?        | Builds Java applications and manages dependencies.                  |
+| What is JAR?          | Java application package containing compiled code and dependencies. |
+| What is Dockerfile?   | Instructions used to build Docker images.                           |
+| What is ACR?          | Azure service used to store Docker images.                          |
+| What is AKS?          | Azure managed Kubernetes service.                                   |
+| What is a Pod?        | Smallest deployable unit in Kubernetes.                             |
+| What is a Deployment? | Manages application pods and their desired state.                   |
+| What is a Service?    | Provides network access to application pods.                        |
+| What is an Agent?     | Machine that executes pipeline tasks.                               |
+
+---
+
+## 13. Final Pipeline Flow
+
+### CI – Continuous Integration
+
+**GitHub → Maven Build → JAR → Docker Build → Docker Image → ACR**
+
+### CD – Continuous Delivery / Deployment
+
+**ACR → Azure DevOps → AKS → Kubernetes Deployment → Pods → Running Application**
+
+### Complete Flow
+
+**GitHub → Azure DevOps → Maven → Docker → ACR → AKS → Pods → Web Application**
+
+---
+
+## 14. Project Summary
+
+Implemented an automated CI/CD pipeline using Azure DevOps to build and containerize a Java Spring Boot web application. Integrated GitHub for source code management, Maven for application builds, Docker for containerization, Azure Container Registry for image storage, and Azure Kubernetes Service for application deployment.
+
+The pipeline automates application builds, Docker image publishing, and Kubernetes deployment whenever code changes are pushed to the main branch.
+
+**Note:** This is a learning project. Before production use, add automated tests, health probes, resource limits, secure credentials, and deployment verification.
+
+**Important technical note:** The pipeline and Kubernetes manifest above use matching build-specific image tags, but for a real deployment you should also configure image-pull permissions, validate the service connection authentication, and test the deployment before treating it as production-ready.
